@@ -1,0 +1,26 @@
+
+# Secrets and environment
+.env
+.env.*
+!.env.example
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+
+# Downloaded data and generated files
+data/
+*.json.gz
+*.parquet
+*.avro
+warehouse/
+spark-warehouse/
+.sparkStaging/
+metastore_db/
+derby.log/
+
+# Logs and temporary files
+logs/
+*.log
+.DS_Store
