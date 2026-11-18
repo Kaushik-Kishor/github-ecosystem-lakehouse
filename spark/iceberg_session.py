@@ -1,4 +1,3 @@
-
 import os
 
 from dotenv import load_dotenv
@@ -13,6 +12,8 @@ PACKAGES = ",".join(
         f"org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:{ICEBERG_VERSION}",
         f"org.apache.iceberg:iceberg-aws-bundle:{ICEBERG_VERSION}",
         "org.postgresql:postgresql:42.7.5",
+        "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.6",
+        "org.apache.spark:spark-avro_2.12:3.5.6",
     ]
 )
 
@@ -39,7 +40,7 @@ def get_spark(app_name: str = "Nexus-Iceberg"):
     builder = (
         SparkSession.builder
         .appName(app_name)
-        .master("local[2]")
+        .master("local[4]")
         .config("spark.jars.packages", PACKAGES)
         .config(
             "spark.sql.extensions",

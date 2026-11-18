@@ -24,3 +24,13 @@ derby.log/
 logs/
 *.log
 .DS_Store
+
+# Spark streaming checkpoints and runtime state
+checkpoints/
+.checkpoints/
+
+# Test and development artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+*.egg-info/
