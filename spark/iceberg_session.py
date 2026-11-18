@@ -40,7 +40,8 @@ def get_spark(app_name: str = "Nexus-Iceberg"):
     builder = (
         SparkSession.builder
         .appName(app_name)
-        .master("local[4]")
+        .config("spark.driver.memory", "4g")
+        .master("local[2]")
         .config("spark.jars.packages", PACKAGES)
         .config(
             "spark.sql.extensions",

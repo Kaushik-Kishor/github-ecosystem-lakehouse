@@ -34,3 +34,23 @@ checkpoints/
 .coverage
 htmlcov/
 *.egg-info/
+
+# Spark streaming checkpoints and runtime state
+checkpoints/
+.checkpoints/
+
+# Test and development artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+*.egg-info/
+
+# Spark streaming checkpoints and runtime state
+checkpoints/
+.checkpoints/
+
+# Test and development artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+*.egg-info/
