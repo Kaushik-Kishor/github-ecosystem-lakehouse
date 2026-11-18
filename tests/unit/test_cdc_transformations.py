@@ -1,7 +1,5 @@
 import json
 
-from datetime import datetime
-
 from spark.processing.cdc_transformations import build_changes
 
 

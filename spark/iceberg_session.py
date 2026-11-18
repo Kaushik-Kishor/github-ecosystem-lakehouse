@@ -31,7 +31,7 @@ def get_spark(app_name: str = "Nexus-Iceberg"):
 
     missing = [key for key in required_env if not os.getenv(key)]
     if missing:
-        raise EnvironmentError(
+        raise OSError(
             f"Missing environment variables: {', '.join(missing)}"
         )
 

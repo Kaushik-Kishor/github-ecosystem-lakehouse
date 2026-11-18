@@ -3,12 +3,10 @@ from pathlib import Path
 
 import psycopg2
 from dotenv import load_dotenv
-from pyspark.sql import Window
 from pyspark.sql import functions as F
 
 from spark.iceberg_session import get_spark
 from spark.processing.cdc_transformations import build_changes
-
 
 BRONZE_TABLE = "nexus.bronze.repo_cdc"
 SILVER_TABLE = "nexus.silver.repos_v2"
@@ -47,11 +45,11 @@ def get_latest_bronze_snapshot(spark):
     return int(row["snapshot_id"]), row["operation"]
 
 
-def read_checkpoint(conn):
+def read_checkpoint(conn, control_table=f"{CONTROL_SCHEMA}.{CONTROL_TABLE}"):
     with conn.cursor() as cur:
-        cur.execute("""
+        cur.execute(f"""
             SELECT last_applied_offset, last_bronze_snapshot_id
-            FROM pipeline_control.cdc_offsets
+            FROM {control_table}
             WHERE pipeline_name = %s
               AND topic = %s
               AND partition_id = %s
@@ -68,10 +66,17 @@ def read_checkpoint(conn):
     return int(row[0]), int(row[1])
 
 
-def advance_checkpoint(conn, old_offset, old_snapshot, new_offset, new_snapshot):
+def advance_checkpoint(
+    conn,
+    old_offset,
+    old_snapshot,
+    new_offset,
+    new_snapshot,
+    control_table=f"{CONTROL_SCHEMA}.{CONTROL_TABLE}",
+):
     with conn.cursor() as cur:
-        cur.execute("""
-            UPDATE pipeline_control.cdc_offsets
+        cur.execute(f"""
+            UPDATE {control_table}
             SET last_applied_offset = %s,
                 last_bronze_snapshot_id = %s,
                 last_successful_run = NOW(),
@@ -100,11 +105,11 @@ def advance_checkpoint(conn, old_offset, old_snapshot, new_offset, new_snapshot)
     conn.commit()
 
 
-def merge_changes(spark, changes):
+def merge_changes(spark, changes, target_table=SILVER_TABLE):
     changes.createOrReplaceTempView("repos_silver_incremental_changes")
 
     spark.sql(f"""
-        MERGE INTO {SILVER_TABLE} AS target
+        MERGE INTO {target_table} AS target
         USING repos_silver_incremental_changes AS source
         ON target.repo_id = source.repo_id
 

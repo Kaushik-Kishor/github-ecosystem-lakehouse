@@ -21,6 +21,7 @@ import fcntl
 import os
 import sys
 import time
+from contextlib import contextmanager
 from pathlib import Path
 
 from pyspark import StorageLevel
@@ -28,7 +29,6 @@ from pyspark.sql import functions as F
 from pyspark.sql.window import Window
 
 from spark.iceberg_session import get_spark
-
 
 # ── Configuration ────────────────────────────────────────────────────────────
 
@@ -43,37 +43,48 @@ MAX_OFFSETS_PER_TRIGGER = 10_000
 LOCK_FILE = Path.home() / ".locks" / "nexus-repos-cdc.lock"
 
 
+@contextmanager
 def acquire_pipeline_lock():
-    """Acquire a non-blocking process-wide lock and retain its open handle."""
+    """Acquire and retain a non-blocking process-wide lock."""
     LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
 
-    # a+ avoids truncating the diagnostic PID while another process owns the lock.
-    lock_handle = open(LOCK_FILE, "a+", encoding="utf-8")
+    with LOCK_FILE.open("a+", encoding="utf-8") as lock_handle:
+        try:
+            fcntl.flock(
+                lock_handle.fileno(),
+                fcntl.LOCK_EX | fcntl.LOCK_NB,
+            )
+        except BlockingIOError:
+            lock_handle.seek(0)
+            existing_owner = (
+                lock_handle.read().strip()
+                or "owner details unavailable"
+            )
+            raise RuntimeError(
+                "Another Nexus repositories CDC process already holds "
+                f"the lock ({LOCK_FILE}). "
+                f"Existing lock metadata: {existing_owner}"
+            ) from None
 
-    try:
-        fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except BlockingIOError:
         lock_handle.seek(0)
-        existing_owner = lock_handle.read().strip() or "owner details unavailable"
-        lock_handle.close()
-        raise RuntimeError(
-            "Another Nexus repositories CDC process already holds the lock "
-            f"({LOCK_FILE}). Existing lock metadata: {existing_owner}"
+        lock_handle.truncate()
+        lock_handle.write(
+            f"pid={os.getpid()} started_epoch={time.time():.3f}\\n"
+            f"cwd={Path.cwd()}\\n"
+        )
+        lock_handle.flush()
+
+        print(
+            f"CDC singleton lock acquired: {LOCK_FILE} "
+            f"(PID {os.getpid()})",
+            flush=True,
         )
 
-    lock_handle.seek(0)
-    lock_handle.truncate()
-    lock_handle.write(
-        f"pid={os.getpid()} started_epoch={time.time():.3f}\n"
-        f"cwd={Path.cwd()}\n"
-    )
-    lock_handle.flush()
-
-    print(
-        f"CDC singleton lock acquired: {LOCK_FILE} (PID {os.getpid()})",
-        flush=True,
-    )
-    return lock_handle
+        try:
+            yield lock_handle
+        finally:
+            fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
+            print("CDC singleton lock released.", flush=True)
 
 
 # ── Target Iceberg table ─────────────────────────────────────────────────────
@@ -212,75 +223,72 @@ def process_batch(batch_df, batch_id):
 
 # ── Streaming entry point ────────────────────────────────────────────────────
 
+
 def run_stream():
     # Acquire before creating Spark or touching the target table.
-    lock_handle = acquire_pipeline_lock()
-    spark = None
-    query = None
+    with acquire_pipeline_lock():
+        spark = None
+        query = None
 
-    try:
-        spark = get_spark("Nexus-Repos-CDC-Stream")
-        spark.sparkContext.setLogLevel("WARN")
-        spark.conf.set("spark.sql.shuffle.partitions", "8")
+        try:
+            spark = get_spark("Nexus-Repos-CDC-Stream")
+            spark.sparkContext.setLogLevel("WARN")
+            spark.conf.set("spark.sql.shuffle.partitions", "8")
 
-        create_target_table(spark)
+            create_target_table(spark)
 
-        print(f"Topic:                   {TOPIC}", flush=True)
-        print(f"Target table:            {TARGET_TABLE}", flush=True)
-        print(f"Max offsets per trigger: {MAX_OFFSETS_PER_TRIGGER}", flush=True)
-        print(f"Checkpoint:              {CHECKPOINT_PATH}", flush=True)
-        print(f"Lock file:               {LOCK_FILE}", flush=True)
+            print(f"Topic:                   {TOPIC}", flush=True)
+            print(f"Target table:            {TARGET_TABLE}", flush=True)
+            print(f"Max offsets per trigger: {MAX_OFFSETS_PER_TRIGGER}", flush=True)
+            print(f"Checkpoint:              {CHECKPOINT_PATH}", flush=True)
+            print(f"Lock file:               {LOCK_FILE}", flush=True)
 
-        kafka_stream = (
-            spark.readStream
-            .format("kafka")
-            .option("kafka.bootstrap.servers", BOOTSTRAP_SERVERS)
-            .option("subscribe", TOPIC)
-            .option("startingOffsets", "earliest")
-            .option("maxOffsetsPerTrigger", MAX_OFFSETS_PER_TRIGGER)
-            .option("failOnDataLoss", "false")
-            .option("kafka.max.poll.interval.ms", "600000")
-            .option("kafka.session.timeout.ms", "60000")
-            .option("kafka.heartbeat.interval.ms", "20000")
-            .option("kafka.request.timeout.ms", "120000")
-            .option("kafka.default.api.timeout.ms", "120000")
-            .load()
-        )
-
-        valid_events = (
-            kafka_stream
-            .filter(F.col("value").isNotNull())
-            .select(
-                F.col("value").cast("string").alias("value"),
-                F.col("partition"),
-                F.col("offset"),
+            kafka_stream = (
+                spark.readStream
+                .format("kafka")
+                .option("kafka.bootstrap.servers", BOOTSTRAP_SERVERS)
+                .option("subscribe", TOPIC)
+                .option("startingOffsets", "earliest")
+                .option("maxOffsetsPerTrigger", MAX_OFFSETS_PER_TRIGGER)
+                .option("failOnDataLoss", "false")
+                .option("kafka.max.poll.interval.ms", "600000")
+                .option("kafka.session.timeout.ms", "60000")
+                .option("kafka.heartbeat.interval.ms", "20000")
+                .option("kafka.request.timeout.ms", "120000")
+                .option("kafka.default.api.timeout.ms", "120000")
+                .load()
             )
-        )
 
-        query = (
-            valid_events.writeStream
-            .foreachBatch(process_batch)
-            .option("checkpointLocation", CHECKPOINT_PATH)
-            .trigger(processingTime="10 seconds")
-            .start()
-        )
+            valid_events = (
+                kafka_stream
+                .filter(F.col("value").isNotNull())
+                .select(
+                    F.col("value").cast("string").alias("value"),
+                    F.col("partition"),
+                    F.col("offset"),
+                )
+            )
 
-        print("CDC pipeline is running.", flush=True)
-        query.awaitTermination()
+            query = (
+                valid_events.writeStream
+                .foreachBatch(process_batch)
+                .option("checkpointLocation", CHECKPOINT_PATH)
+                .trigger(processingTime="10 seconds")
+                .start()
+            )
 
-    except KeyboardInterrupt:
-        print("Stopping CDC pipeline...", flush=True)
-        if query is not None:
-            query.stop()
-    finally:
-        if spark is not None:
-            spark.stop()
+            print("CDC pipeline is running.", flush=True)
+            query.awaitTermination()
 
-        # Keep the lock file on disk. Unlocking and closing releases flock;
-        # the stable path prevents inode races with another launcher.
-        fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
-        lock_handle.close()
-        print("CDC singleton lock released.", flush=True)
+        except KeyboardInterrupt:
+            print("Stopping CDC pipeline...", flush=True)
+            if query is not None:
+                query.stop()
+
+        finally:
+            if spark is not None:
+                spark.stop()
+
 
 
 if __name__ == "__main__":

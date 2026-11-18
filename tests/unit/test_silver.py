@@ -1,9 +1,9 @@
 from datetime import date, datetime
 
 from pyspark.sql.types import (
-    StructType,
-    StructField,
     StringType,
+    StructField,
+    StructType,
     TimestampType,
 )
 

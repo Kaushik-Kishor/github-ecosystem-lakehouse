@@ -7,7 +7,6 @@ from pyspark.sql import functions as F
 
 from spark.iceberg_session import get_spark
 
-
 load_dotenv()
 
 
@@ -123,9 +122,8 @@ def seed_repos():
         )
 
         try:
-            with connection:
-                with connection.cursor() as cursor:
-                    cursor.execute("""
+            with connection, connection.cursor() as cursor:
+                cursor.execute("""
                         INSERT INTO public.repos (
                             repo_id,
                             name,
@@ -146,14 +144,14 @@ def seed_repos():
                         DO NOTHING;
                     """)
 
-                    inserted = cursor.rowcount
+                inserted = cursor.rowcount
 
-                    cursor.execute("""
+                cursor.execute("""
                         SELECT COUNT(*)
                         FROM public.repos;
                     """)
 
-                    total = cursor.fetchone()[0]
+                total = cursor.fetchone()[0]
 
             print(f"New repositories inserted: {inserted:,}")
             print(f"Total repositories in app.repos: {total:,}")
@@ -173,11 +171,10 @@ def seed_repos():
         )
 
         try:
-            with connection:
-                with connection.cursor() as cursor:
-                    cursor.execute(
-                        "DROP TABLE IF EXISTS public.repos_seed_staging;"
-                    )
+            with connection, connection.cursor() as cursor:
+                cursor.execute(
+                    "DROP TABLE IF EXISTS public.repos_seed_staging;"
+                )
         finally:
             connection.close()
 

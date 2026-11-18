@@ -9,7 +9,6 @@ from pyspark.sql import functions as F
 
 from spark.iceberg_session import get_spark
 
-
 load_dotenv()
 
 ARCHIVE_DATE = os.getenv("GH_ARCHIVE_DATE", "2024-01-15")

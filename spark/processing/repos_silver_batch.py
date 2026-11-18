@@ -3,7 +3,6 @@ from pyspark.sql import functions as F
 
 from spark.iceberg_session import get_spark
 
-
 BRONZE_TABLE = "nexus.bronze.repo_cdc"
 SILVER_TABLE = "nexus.silver.repos_v2"
 

@@ -2,9 +2,9 @@ from datetime import date, datetime
 
 from spark.gold.transformations import (
     build_daily_metrics,
+    build_developer_activity,
     build_hourly_metrics,
     build_repo_activity,
-    build_developer_activity,
 )
 
 

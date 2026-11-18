@@ -7,7 +7,7 @@ from datetime import datetime
 import boto3
 import requests
 from botocore.config import Config
-from botocore.exceptions import ClientError
+from botocore.exceptions import BotoCoreError, ClientError
 from dotenv import load_dotenv
 
 # Load configuration
@@ -110,9 +110,6 @@ def download_and_upload(hour):
             if attempt == MAX_RETRIES:
                 raise
 
-        except Exception:
-            raise
-
         time.sleep(2 ** attempt)
 
     raise RuntimeError(f"Failed to process {filename}")
@@ -139,7 +136,12 @@ def main():
                 results.append(result)
                 print(result)
 
-            except Exception as error:
+            except (
+                requests.RequestException,
+                BotoCoreError,
+                OSError,
+                RuntimeError,
+            ) as error:
                 print(f"FAILED: hour {hour:02d} — {error}")
 
     uploaded = sum(r.startswith("UPLOADED") for r in results)

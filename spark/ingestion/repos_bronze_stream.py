@@ -5,7 +5,6 @@ from pyspark.sql import functions as F
 
 from spark.iceberg_session import get_spark
 
-
 TOPIC = "nexus.public.repos"
 BOOTSTRAP_SERVERS = "localhost:19092"
 TARGET_TABLE = "nexus.bronze.repo_cdc"
