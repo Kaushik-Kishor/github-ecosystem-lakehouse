@@ -23,7 +23,7 @@ LOCK_NAME = "nexus-repos-silver-incremental"
 
 def connect_control_db():
     return psycopg2.connect(
-        host="localhost",
+        host=os.getenv("POSTGRES_HOST", "localhost"),
         port=5432,
         dbname="iceberg",
         user=os.environ["POSTGRES_USER"],

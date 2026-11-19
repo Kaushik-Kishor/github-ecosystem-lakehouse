@@ -54,7 +54,7 @@ def get_spark(app_name: str = "Nexus-Iceberg"):
         .config(f"spark.sql.catalog.{catalog}.type", "jdbc")
         .config(
             f"spark.sql.catalog.{catalog}.uri",
-            "jdbc:postgresql://localhost:5432/iceberg",
+            os.getenv("ICEBERG_CATALOG_URI", "jdbc:postgresql://localhost:5432/iceberg"),
         )
         .config(
             f"spark.sql.catalog.{catalog}.jdbc.user",

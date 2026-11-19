@@ -15,7 +15,7 @@ def main():
     try:
         source = (
             spark.read.format("jdbc")
-            .option("url", "jdbc:postgresql://localhost:5432/app")
+            .option("url", f"jdbc:postgresql://{os.getenv('POSTGRES_HOST', 'localhost')}:5432/app")
             .option("dbtable", "public.repos")
             .option("user", os.environ["POSTGRES_USER"])
             .option("password", os.environ["POSTGRES_PASSWORD"])
