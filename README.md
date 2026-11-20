@@ -1,13 +1,13 @@
 # Nexus — GitHub Ecosystem Lakehouse
 
-An end-to-end data engineering project that transforms historical GitHub activity and repository changes into analytics-ready datasets using **Apache Spark, Apache Iceberg, Debezium, Redpanda, PostgreSQL, MinIO, and Apache Airflow**.
+An end-to-end data engineering project that transforms historical GitHub activity and repository changes into analytics-ready datasets using **Apache Spark, Apache Iceberg, Debezium, Redpanda, PostgreSQL, MinIO, Amazon S3, and Apache Airflow**.
 
 Nexus implements a Medallion Architecture with two complementary data pipelines:
 
 - **Historical batch pipeline:** Ingests GitHub activity data from GH Archive and transforms it into analytical datasets.
 - **Repository CDC pipeline:** Captures PostgreSQL repository changes through Debezium and Redpanda, then incrementally maintains repository state in Iceberg.
 
-Apache Airflow orchestrates the historical batch workflow and incremental CDC processing.
+Apache Airflow orchestrates historical batch processing and incremental CDC workflows.
 
 The project focuses on reliable ingestion, incremental processing, idempotent transformations, checkpoint management, data quality, workflow orchestration, and source-to-target reconciliation.
 
@@ -23,7 +23,7 @@ Processes historical GitHub events from GH Archive through Bronze, Silver, and G
 GH Archive (.json.gz)
         |
         v
-S3-Compatible Object Storage
+Object Storage (MinIO / Amazon S3)
         |
         v
 Apache Spark
@@ -56,7 +56,7 @@ Captures repository inserts, updates, and deletes from PostgreSQL and incrementa
 PostgreSQL (app.public.repos)
         |
         v
-Debezium
+Debezium PostgreSQL Connector
         |
         v
 Redpanda
@@ -98,7 +98,7 @@ The CDC architecture separates continuous message ingestion from incremental sta
 
 ### Pipeline C — Workflow Orchestration
 
-Apache Airflow coordinates the batch and incremental processing workflows.
+Apache Airflow coordinates batch processing and incremental CDC workflows.
 
 **Historical DAG — `nexus_historical_pipeline`**
 
@@ -150,14 +150,14 @@ The continuous Spark Structured Streaming job that ingests Redpanda messages int
 | Languages | Python, SQL |
 | Data Processing | Apache Spark 3.5.6, PySpark |
 | Table Format | Apache Iceberg 1.9.2 |
-| Object Storage | MinIO, S3-compatible storage |
-| CDC | Debezium |
-| Streaming Infrastructure | Redpanda |
+| Object Storage | MinIO, Amazon S3 |
+| CDC | Debezium 2.5.4 |
+| Streaming Infrastructure | Redpanda 24.2.14 |
 | Operational Database | PostgreSQL 16 |
 | Iceberg Catalog | PostgreSQL-backed JDBC Catalog |
 | Workflow Orchestration | Apache Airflow 2.10.5 |
 | Airflow Executor | LocalExecutor |
-| Infrastructure | Docker Compose |
+| Infrastructure | Docker Compose, AWS EC2 |
 | Testing | Pytest, PySpark |
 | Code Quality | Ruff |
 
@@ -172,6 +172,7 @@ The continuous Spark Structured Streaming job that ingests Redpanda messages int
 - Integrated Apache Spark with Apache Iceberg.
 - Configured S3-compatible storage through Iceberg S3FileIO.
 - Established a local development environment using Docker and WSL.
+- Configured Amazon S3 as the object storage layer for the temporary AWS deployment.
 
 ### 2. Historical Event Ingestion
 
@@ -205,6 +206,7 @@ Implemented a PostgreSQL-to-Iceberg CDC pipeline using Debezium, Redpanda, Spark
 
 - Seeded PostgreSQL with 852,777 distinct repository records.
 - Configured Debezium PostgreSQL CDC.
+- Configured PostgreSQL logical replication and the `pgoutput` plugin.
 - Verified insert, update, and delete event capture.
 
 The repository records are seeded test data. Their attributes should not be interpreted as verified live GitHub repository metadata.
@@ -235,7 +237,7 @@ The repository records are seeded test data. Their attributes should not be inte
 - Designed replay handling for failures between the Iceberg commit and PostgreSQL checkpoint update.
 - Added source-to-Silver reconciliation.
 
-The Iceberg write and PostgreSQL checkpoint update are separate operations; the design uses idempotent merges and checkpoint comparison to handle retries rather than claiming a distributed exactly-once transaction.
+The Iceberg write and PostgreSQL checkpoint update are separate operations. The design uses idempotent merges and checkpoint comparison to handle retries rather than claiming a distributed exactly-once transaction.
 
 ### 4. Gold Analytics
 
@@ -265,13 +267,13 @@ Synthetic repository metadata is not treated as genuine GitHub metadata or joine
 
 The initial repository state and subsequent incremental changes were reconciled against PostgreSQL.
 
-**Repository reconciliation**
+**Final AWS deployment reconciliation**
 
 | Metric | Result |
 |---|---:|
 | PostgreSQL records | 852,777 |
 | Silver active records | 852,777 |
-| Silver soft-deleted records | 2 |
+| Silver soft-deleted records | 0 |
 | Missing records | 0 |
 | Extra records | 0 |
 | Attribute mismatches | 0 |
@@ -291,6 +293,8 @@ The initial repository state and subsequent incremental changes were reconciled 
 The eight messages include the test operations and associated tombstones. Offset accounting and repository state application are handled separately.
 
 **Source-to-Silver reconciliation: PASSED**
+
+The final AWS reconciliation confirmed that all 852,777 PostgreSQL records matched their corresponding active Silver records, with zero missing records, extra records, or attribute mismatches.
 
 ### 6. Automated Testing
 
@@ -336,11 +340,10 @@ Implemented Apache Airflow 2.10.5 to orchestrate historical batch processing and
 
 **Airflow deployment**
 
-- Runs locally through Docker Compose.
 - Uses LocalExecutor.
 - Uses a dedicated PostgreSQL database named `airflow` for metadata.
-- Shares the project directory with the Airflow containers so DAG tasks can execute the existing project scripts.
-- Provides the Airflow web UI at `http://localhost:8080`.
+- Shares the project directory with Airflow containers so DAG tasks can execute project scripts.
+- Provides the Airflow web UI at `http://localhost:8080` in the local environment.
 
 **Historical DAG — `nexus_historical_pipeline`**
 
@@ -361,7 +364,43 @@ Runs every 15 minutes and coordinates:
 
 The long-running Bronze streaming job remains independent of Airflow. This keeps continuous ingestion separate from downstream processing and validation.
 
-Both DAGs have been executed successfully through the Airflow UI.
+Both DAGs were successfully executed through the Airflow UI during local development and the AWS deployment.
+
+### 8. AWS Deployment
+
+Deployed Nexus to AWS to validate the pipelines in a cloud environment.
+
+**Infrastructure**
+
+| Component | AWS configuration |
+|---|---|
+| Region | Asia Pacific (Mumbai) — `ap-south-1` |
+| Compute | Amazon EC2 |
+| Instance type | `m7i-flex.large` |
+| Operating system | Ubuntu Server 24.04 LTS |
+| Container orchestration | Docker Compose |
+| Object storage | Amazon S3 |
+| Access management | IAM instance role |
+| Pipeline orchestration | Apache Airflow |
+
+The EC2 instance hosted the containerized PostgreSQL, Redpanda, Debezium, and Airflow services. Spark processed the historical and CDC datasets, while Iceberg tables were stored in Amazon S3.
+
+**AWS deployment validation**
+
+- Successfully deployed the Docker-based data engineering stack to EC2.
+- Configured EC2 access to S3 through an IAM instance role rather than hardcoded AWS access keys.
+- Executed the historical GH Archive pipeline through Airflow.
+- Successfully completed all five historical DAG tasks.
+- Executed the CDC pipeline through Airflow.
+- Successfully completed incremental processing and reconciliation tasks.
+- Verified 852,777 PostgreSQL records against 852,777 active Silver records.
+- Confirmed zero missing records, extra records, and attribute mismatches.
+
+**Deployment status**
+
+The AWS environment was provisioned temporarily for deployment testing and portfolio validation. After successful execution and evidence collection, the EC2 instance was terminated and the S3 bucket was deleted to avoid ongoing infrastructure costs.
+
+The AWS deployment is therefore a completed deployment and validation exercise, not a continuously running production environment.
 
 ---
 
@@ -429,6 +468,7 @@ Decouples continuous Kafka ingestion from incremental repository state applicati
 │   ├── ingestion/
 │   │   └── repos_bronze_stream.py
 │   ├── processing/
+│   │   ├── cdc_transformations.py
 │   │   ├── repos_silver_batch.py
 │   │   └── repos_silver_incremental.py
 │   └── validation/
@@ -535,12 +575,16 @@ In the Airflow UI:
 ```text
 download_gh_archive
         |
+        v
 build_bronze
         |
+        v
 build_silver
         |
+        v
 build_gold
         |
+        v
 validate_gold
 ```
 
@@ -551,7 +595,7 @@ The DAG coordinates the historical download, ingestion, transformations, and val
 Check that the PostgreSQL CDC connector is running:
 
 ```bash
-curl http://localhost:8083/connectors/nexus-postgres-source/status
+curl http://localhost:8083/connectors/nexus-postgres-connector/status
 ```
 
 The connector and its task should both report `RUNNING`.
@@ -585,6 +629,7 @@ The DAG runs every 15 minutes and executes:
 ```text
 process_incremental_cdc
         |
+        v
 reconcile_cdc_state
 ```
 
@@ -594,7 +639,7 @@ The Bronze streaming process and the Airflow scheduler must remain available for
 
 ### 8. Run individual pipeline scripts manually
 
-For development and debugging, the individual scripts can also be executed outside Airflow.
+For development and debugging, individual scripts can also be executed outside Airflow.
 
 **Historical ingestion**
 
@@ -606,7 +651,7 @@ python -m ingest.bronze
 **Build Silver and Gold**
 
 ```bash
-python -m spark.silver_batch
+python -m spark.processing.repos_silver_batch
 python -m spark.gold.build_gold
 python -m spark.gold.validate_gold
 ```
@@ -657,7 +702,6 @@ Persistent PostgreSQL, Redpanda, and MinIO data are stored in Docker volumes. Do
 
 ## Roadmap
 
-
 - [x] Deploy local infrastructure using Docker Compose.
 - [x] Implement GH Archive historical data ingestion.
 - [x] Build Iceberg Bronze, Silver, and Gold layers.
@@ -671,20 +715,26 @@ Persistent PostgreSQL, Redpanda, and MinIO data are stored in Docker volumes. Do
 - [x] Add local transformation performance benchmarks.
 - [x] Orchestrate historical processing with Apache Airflow.
 - [x] Orchestrate incremental CDC processing with Apache Airflow.
-- [ ] Deploy Nexus on AWS.
+- [x] Deploy and validate historical and CDC pipelines on AWS.
+- [x] Verify cloud pipeline execution and source-to-Silver reconciliation.
+- [x] Terminate temporary AWS infrastructure after validation.
 
 ---
 
 ## Project Status
 
-**Core historical batch, repository CDC, Gold analytics, and workflow orchestration pipelines implemented.**
+**Core historical batch, repository CDC, Gold analytics, workflow orchestration, and AWS deployment validation completed.**
 
 Historical GitHub events are stored in Iceberg Bronze and Silver, with four Gold aggregation tables built from normalized event data.
 
 Repository changes are captured through Debezium and Redpanda, ingested into append-only Bronze, and incrementally applied to Silver using Spark and Iceberg.
 
-The repository CDC pipeline has passed source-to-Silver reconciliation, and the automated test suite currently passes all 23 tests.
+The repository CDC pipeline has passed source-to-Silver reconciliation, with 852,777 active records matching PostgreSQL and zero attribute mismatches.
 
-Apache Airflow orchestrates the historical workflow and incremental CDC processing through two DAGs.
+The automated test suite passes all 23 tests.
 
-**The local implementation is complete. AWS deployment is the only remaining project milestone.**
+Apache Airflow orchestrates the historical workflow and incremental CDC processing through two successfully executed DAGs.
+
+Nexus was also deployed and validated on AWS, with both historical and CDC pipelines completing successfully. The temporary cloud infrastructure was subsequently decommissioned to avoid ongoing costs.
+
+**The implementation and cloud validation milestones are complete.**
