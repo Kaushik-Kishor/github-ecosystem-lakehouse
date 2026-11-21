@@ -2,6 +2,16 @@
 
 An end-to-end data engineering project that transforms historical GitHub activity and repository changes into analytics-ready datasets using **Apache Spark, Apache Iceberg, Debezium, Redpanda, PostgreSQL, MinIO, Amazon S3, and Apache Airflow**.
 
+[![Python](https://img.shields.io/badge/Python-3.10+-3776AB?style=flat-square&logo=python&logoColor=white)](.)
+[![Apache Spark](https://img.shields.io/badge/Apache_Spark-3.5.6-E25A1C?style=flat-square&logo=apachespark&logoColor=white)](.)
+[![Apache Iceberg](https://img.shields.io/badge/Apache_Iceberg-1.9.2-1B6AC6?style=flat-square)](.)
+[![Debezium](https://img.shields.io/badge/Debezium-2.5.4-FF6F00?style=flat-square)](.)
+[![Redpanda](https://img.shields.io/badge/Redpanda-Kafka_Compatible-5B4DCE?style=flat-square)](.)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?style=flat-square&logo=postgresql&logoColor=white)](.)
+[![Apache Airflow](https://img.shields.io/badge/Apache_Airflow-2.10.5-017CEE?style=flat-square&logo=apacheairflow&logoColor=white)](.)
+[![AWS S3](https://img.shields.io/badge/AWS-S3-569A31?style=flat-square&logo=amazons3&logoColor=white)](.)
+[![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?style=flat-square&logo=docker&logoColor=white)](.)
+
 Nexus implements a Medallion Architecture with two complementary data pipelines:
 
 - **Historical batch pipeline:** Ingests GitHub activity data from GH Archive and transforms it into analytical datasets.
@@ -10,6 +20,15 @@ Nexus implements a Medallion Architecture with two complementary data pipelines:
 Apache Airflow orchestrates historical batch processing and incremental CDC workflows.
 
 The project focuses on reliable ingestion, incremental processing, idempotent transformations, checkpoint management, data quality, workflow orchestration, and source-to-target reconciliation.
+
+## Pipeline execution
+
+Both Airflow workflows were successfully executed during the AWS deployment.
+
+| Historical batch pipeline | Repository CDC pipeline |
+|---|---|
+| ![Historical Airflow DAG](docs/images/historical-pipeline.png) | ![CDC Airflow DAG](docs/images/cdc-pipeline.png) |
+| Five tasks completed successfully | Incremental processing and reconciliation completed successfully |
 
 ---
 
@@ -355,6 +374,8 @@ Coordinates the complete historical workflow:
 4. Build Gold.
 5. Validate Gold.
 
+![Historical DAG execution](docs/images/historical-execution.png)
+
 **CDC DAG — `nexus_cdc_pipeline`**
 
 Runs every 15 minutes and coordinates:
@@ -362,9 +383,9 @@ Runs every 15 minutes and coordinates:
 1. Incremental CDC processing from Bronze to Silver.
 2. Source-to-Silver reconciliation.
 
-The long-running Bronze streaming job remains independent of Airflow. This keeps continuous ingestion separate from downstream processing and validation.
-
 Both DAGs were successfully executed through the Airflow UI during local development and the AWS deployment.
+
+The long-running Bronze streaming job remains independent of Airflow. This keeps continuous ingestion separate from downstream processing and validation.
 
 ### 8. AWS Deployment
 
@@ -384,6 +405,10 @@ Deployed Nexus to AWS to validate the pipelines in a cloud environment.
 | Pipeline orchestration | Apache Airflow |
 
 The EC2 instance hosted the containerized PostgreSQL, Redpanda, Debezium, and Airflow services. Spark processed the historical and CDC datasets, while Iceberg tables were stored in Amazon S3.
+
+**S3 storage structure**
+
+![Amazon S3 bucket structure](docs/images/s3-storage.png)
 
 **AWS deployment validation**
 
@@ -447,6 +472,13 @@ Decouples continuous Kafka ingestion from incremental repository state applicati
 │   ├── logs/
 │   ├── plugins/
 │   └── Dockerfile
+│
+├── docs/
+│   └── images/
+│       ├── cdc-pipeline.png
+│       ├── historical-pipeline.png
+│       ├── historical-execution.png
+│       └── s3-storage.png
 │
 ├── ingest/
 │   ├── download.py

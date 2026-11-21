@@ -8,7 +8,7 @@ from spark.iceberg_session import get_spark
 
 
 def main():
-    load_dotenv(Path.cwd() / ".env")
+    # Environment variables are supplied by Docker Compose
 
     spark = get_spark("Nexus-Repos-CDC-Reconciliation")
 
